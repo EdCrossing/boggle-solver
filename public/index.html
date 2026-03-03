@@ -1,0 +1,741 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Boggle Solver</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #1a1a2e;
+      color: #e0e0e0;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 2rem 1rem;
+    }
+
+    h1 {
+      font-size: 2rem;
+      margin-bottom: 1.5rem;
+      color: #e94560;
+      letter-spacing: 0.05em;
+    }
+
+    /* ── Mode tabs ───────────────────────────────────────── */
+
+    .mode-tabs {
+      display: flex;
+      gap: 0;
+      margin-bottom: 1.5rem;
+      border-radius: 8px;
+      overflow: hidden;
+      border: 1px solid #333;
+    }
+
+    .mode-tab {
+      padding: 0.6rem 1.5rem;
+      background: #16213e;
+      color: #aaa;
+      cursor: pointer;
+      font-size: 0.95rem;
+      font-weight: 600;
+      border: none;
+      transition: all 0.15s;
+    }
+
+    .mode-tab:hover { color: #e0e0e0; }
+
+    .mode-tab.active {
+      background: #e94560;
+      color: #fff;
+    }
+
+    .mode-section { display: none; }
+    .mode-section.visible { display: block; text-align: center; }
+
+    /* ── MxN controls ────────────────────────────────────── */
+
+    .grid-size-controls {
+      display: flex;
+      gap: 1rem;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 1rem;
+    }
+
+    .grid-size-controls label {
+      font-size: 0.9rem;
+      color: #aaa;
+    }
+
+    /* ── Layout designer ─────────────────────────────────── */
+
+    .layout-section-inner {
+      margin-bottom: 1rem;
+      text-align: center;
+    }
+
+    .layout-label {
+      font-size: 0.9rem;
+      color: #aaa;
+      margin-bottom: 0.5rem;
+    }
+
+    .layout-grid {
+      display: inline-grid;
+      grid-template-columns: repeat(3, 56px);
+      gap: 4px;
+      padding: 8px;
+      background: #111;
+      border-radius: 8px;
+    }
+
+    .layout-cell {
+      width: 56px;
+      height: 56px;
+      border: 2px solid #333;
+      border-radius: 6px;
+      background: #16213e;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.7rem;
+      color: #555;
+      transition: all 0.15s;
+      user-select: none;
+    }
+
+    .layout-cell:hover { border-color: #e94560; }
+
+    .layout-cell.active {
+      background: #0f3460;
+      border-color: #e94560;
+      color: #e94560;
+      font-weight: 700;
+      font-size: 0.8rem;
+    }
+
+    /* ── Shared controls ─────────────────────────────────── */
+
+    .controls {
+      display: flex;
+      gap: 1rem;
+      align-items: center;
+      margin-bottom: 1.5rem;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+
+    .controls label {
+      font-size: 0.9rem;
+      color: #aaa;
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+    }
+
+    select, button {
+      font-size: 1rem;
+      padding: 0.5rem 1rem;
+      border: 1px solid #333;
+      border-radius: 6px;
+      background: #16213e;
+      color: #e0e0e0;
+      cursor: pointer;
+    }
+
+    select:hover, button:hover { border-color: #e94560; }
+    button { font-weight: 600; transition: all 0.15s; }
+
+    button.primary {
+      background: #e94560;
+      border-color: #e94560;
+      color: #fff;
+    }
+
+    button.primary:hover { background: #c73652; }
+
+    button.primary:disabled {
+      background: #555;
+      border-color: #555;
+      cursor: not-allowed;
+    }
+
+    input[type="checkbox"] {
+      accent-color: #e94560;
+      width: 16px;
+      height: 16px;
+      cursor: pointer;
+    }
+
+    /* ── Board grid ──────────────────────────────────────── */
+
+    .board {
+      display: inline-grid;
+      gap: 2px;
+      margin-bottom: 1.5rem;
+      padding: 8px;
+      background: #16213e;
+      border-radius: 10px;
+      border: 2px solid #333;
+    }
+
+    .board .cell {
+      text-align: center;
+      font-weight: 700;
+      text-transform: uppercase;
+      border: 2px solid #333;
+      border-radius: 6px;
+      background: #0f3460;
+      color: #fff;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+
+    .board .cell:focus {
+      border-color: #e94560;
+      background: #1a4a7a;
+    }
+
+    .board .cell::placeholder {
+      color: #445;
+      font-weight: 400;
+    }
+
+    .board .empty {
+      background: transparent;
+      border: none;
+    }
+
+    /* ── Results ─────────────────────────────────────────── */
+
+    .stats {
+      text-align: center;
+      margin-bottom: 1rem;
+      font-size: 1.1rem;
+    }
+
+    .stats .count { color: #e94560; font-weight: 700; }
+    .stats .score { color: #53d769; font-weight: 700; }
+    .stats .time { color: #888; font-size: 0.85rem; }
+
+    .results { width: 100%; max-width: 800px; }
+    .group { margin-bottom: 1.2rem; }
+
+    .group-header {
+      font-size: 0.95rem;
+      color: #e94560;
+      margin-bottom: 0.4rem;
+      border-bottom: 1px solid #333;
+      padding-bottom: 0.3rem;
+    }
+
+    .group-header .pts { color: #53d769; }
+
+    .words {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.3rem 0.6rem;
+    }
+
+    .words span {
+      font-family: "SF Mono", "Fira Code", "Consolas", monospace;
+      font-size: 0.9rem;
+      background: #16213e;
+      padding: 0.2rem 0.5rem;
+      border-radius: 4px;
+      border: 1px solid #2a2a4a;
+    }
+
+    .empty-msg {
+      color: #666;
+      text-align: center;
+      padding: 2rem;
+      font-style: italic;
+    }
+
+    @media (max-width: 600px) {
+      .board .cell, .board .empty {
+        width: 36px !important;
+        height: 36px !important;
+        font-size: 1rem !important;
+      }
+    }
+  </style>
+</head>
+<body>
+  <h1>Boggle Solver</h1>
+
+  <!-- Mode switcher -->
+  <div class="mode-tabs">
+    <button class="mode-tab active" data-mode="grid" onclick="setMode('grid')">MxN Grid</button>
+    <button class="mode-tab" data-mode="blocks" onclick="setMode('blocks')">Multi-Board</button>
+  </div>
+
+  <!-- MxN Grid mode config -->
+  <div class="mode-section visible" id="gridMode">
+    <div class="grid-size-controls">
+      <label>Rows
+        <select id="rows">
+          <option value="2">2</option>
+          <option value="3">3</option>
+          <option value="4" selected>4</option>
+          <option value="5">5</option>
+          <option value="6">6</option>
+          <option value="7">7</option>
+          <option value="8">8</option>
+          <option value="9">9</option>
+          <option value="10">10</option>
+          <option value="11">11</option>
+          <option value="12">12</option>
+        </select>
+      </label>
+      <label>Cols
+        <select id="cols">
+          <option value="2">2</option>
+          <option value="3">3</option>
+          <option value="4" selected>4</option>
+          <option value="5">5</option>
+          <option value="6">6</option>
+          <option value="7">7</option>
+          <option value="8">8</option>
+          <option value="9">9</option>
+          <option value="10">10</option>
+          <option value="11">11</option>
+          <option value="12">12</option>
+        </select>
+      </label>
+    </div>
+  </div>
+
+  <!-- Multi-board mode config -->
+  <div class="mode-section" id="blocksMode">
+    <div class="layout-section-inner">
+      <div class="layout-label">Click to place 4x4 blocks</div>
+      <div class="layout-grid" id="layoutGrid"></div>
+    </div>
+  </div>
+
+  <!-- Shared controls -->
+  <div class="controls">
+    <label>Min length
+      <select id="minLen">
+        <option value="3" selected>3</option>
+        <option value="4">4</option>
+        <option value="5">5</option>
+      </select>
+    </label>
+    <label>
+      <input type="checkbox" id="noPlurals">
+      No plurals
+    </label>
+    <button onclick="fillRandom()">Random</button>
+    <button onclick="clearBoard()">Clear</button>
+    <button class="primary" id="solveBtn" onclick="doSolve()">Solve</button>
+  </div>
+
+  <div class="board" id="board"></div>
+
+  <div class="stats" id="stats"></div>
+  <div class="results" id="results">
+    <div class="empty-msg">Enter letters and hit Solve</div>
+  </div>
+
+  <script>
+    // ── Constants ─────────────────────────────────────────
+    const BLOCK = 4;
+    const GRID = 3;
+    const FREQ = "aaaaaaaaabbccddddeeeeeeeeeeeeffggghhiiiiiiiiijkllllmmnnnnnnooooooooppqrrrrrrssssssttttttuuuuvvwwxyyz";
+
+    // ── DOM refs ──────────────────────────────────────────
+    const boardEl = document.getElementById("board");
+    const layoutGridEl = document.getElementById("layoutGrid");
+    const rowsSel = document.getElementById("rows");
+    const colsSel = document.getElementById("cols");
+    const minLenSel = document.getElementById("minLen");
+    const noPluralsEl = document.getElementById("noPlurals");
+    const statsEl = document.getElementById("stats");
+    const resultsEl = document.getElementById("results");
+    const solveBtn = document.getElementById("solveBtn");
+
+    let currentMode = "grid"; // "grid" or "blocks"
+
+    // ── Mode switching ───────────────────────────────────
+    function setMode(mode) {
+      currentMode = mode;
+      document.querySelectorAll(".mode-tab").forEach((t) =>
+        t.classList.toggle("active", t.dataset.mode === mode)
+      );
+      document.getElementById("gridMode").classList.toggle("visible", mode === "grid");
+      document.getElementById("blocksMode").classList.toggle("visible", mode === "blocks");
+      rebuildBoard();
+    }
+
+    function rebuildBoard() {
+      statsEl.innerHTML = "";
+      resultsEl.innerHTML = '<div class="empty-msg">Enter letters and hit Solve</div>';
+      if (currentMode === "grid") {
+        buildMxNGrid();
+      } else {
+        buildBlocksGrid();
+      }
+    }
+
+    // ════════════════════════════════════════════════════
+    // MxN GRID MODE
+    // ════════════════════════════════════════════════════
+
+    function getMxNSize() {
+      return {
+        rows: parseInt(rowsSel.value),
+        cols: parseInt(colsSel.value),
+      };
+    }
+
+    function mxnCellSize() {
+      const { cols } = getMxNSize();
+      if (cols <= 6) return 50;
+      if (cols <= 8) return 44;
+      if (cols <= 10) return 38;
+      return 34;
+    }
+
+    function buildMxNGrid() {
+      const { rows, cols } = getMxNSize();
+      const size = mxnCellSize();
+      boardEl.innerHTML = "";
+      boardEl.style.display = "inline-grid";
+      boardEl.style.gridTemplateColumns = `repeat(${cols}, ${size}px)`;
+
+      for (let r = 0; r < rows; r++) {
+        for (let c = 0; c < cols; c++) {
+          const input = document.createElement("input");
+          input.type = "text";
+          input.maxLength = 1;
+          input.className = "cell";
+          input.style.width = size + "px";
+          input.style.height = size + "px";
+          input.style.fontSize = (size >= 44 ? 1.4 : 1.1) + "rem";
+          input.dataset.r = r;
+          input.dataset.c = c;
+          input.addEventListener("input", handleInput);
+          input.addEventListener("keydown", handleKeydown);
+          boardEl.appendChild(input);
+        }
+      }
+    }
+
+    rowsSel.addEventListener("change", rebuildBoard);
+    colsSel.addEventListener("change", rebuildBoard);
+
+    // ════════════════════════════════════════════════════
+    // MULTI-BOARD (BLOCKS) MODE
+    // ════════════════════════════════════════════════════
+
+    const layout = Array.from({ length: GRID }, () => new Array(GRID).fill(false));
+
+    function buildLayoutDesigner() {
+      layoutGridEl.innerHTML = "";
+      for (let br = 0; br < GRID; br++) {
+        for (let bc = 0; bc < GRID; bc++) {
+          const cell = document.createElement("div");
+          cell.className = "layout-cell" + (layout[br][bc] ? " active" : "");
+          cell.textContent = layout[br][bc] ? "4x4" : "";
+          cell.addEventListener("click", () => {
+            layout[br][bc] = !layout[br][bc];
+            buildLayoutDesigner();
+            if (currentMode === "blocks") buildBlocksGrid();
+          });
+          layoutGridEl.appendChild(cell);
+        }
+      }
+    }
+
+    function activeBlockCount() {
+      return layout.flat().filter(Boolean).length;
+    }
+
+    function getBounds() {
+      let minR = GRID, maxR = -1, minC = GRID, maxC = -1;
+      for (let br = 0; br < GRID; br++) {
+        for (let bc = 0; bc < GRID; bc++) {
+          if (layout[br][bc]) {
+            if (br < minR) minR = br;
+            if (br > maxR) maxR = br;
+            if (bc < minC) minC = bc;
+            if (bc > maxC) maxC = bc;
+          }
+        }
+      }
+      if (maxR === -1) return null;
+      return { minR, maxR, minC, maxC };
+    }
+
+    function isActiveCell(r, c) {
+      const br = Math.floor(r / BLOCK);
+      const bc = Math.floor(c / BLOCK);
+      if (br < 0 || br >= GRID || bc < 0 || bc >= GRID) return false;
+      return layout[br][bc];
+    }
+
+    function buildBlocksGrid() {
+      boardEl.innerHTML = "";
+      const bounds = getBounds();
+      if (!bounds) {
+        boardEl.style.display = "none";
+        return;
+      }
+      boardEl.style.display = "inline-grid";
+
+      const totalRows = (bounds.maxR - bounds.minR + 1) * BLOCK;
+      const totalCols = (bounds.maxC - bounds.minC + 1) * BLOCK;
+      const size = totalCols > 8 ? 38 : 44;
+
+      boardEl.style.gridTemplateColumns = `repeat(${totalCols}, ${size}px)`;
+
+      for (let r = 0; r < totalRows; r++) {
+        for (let c = 0; c < totalCols; c++) {
+          const absR = r + bounds.minR * BLOCK;
+          const absC = c + bounds.minC * BLOCK;
+
+          if (isActiveCell(absR, absC)) {
+            const input = document.createElement("input");
+            input.type = "text";
+            input.maxLength = 1;
+            input.className = "cell";
+            input.style.width = size + "px";
+            input.style.height = size + "px";
+            input.style.fontSize = (size >= 44 ? 1.3 : 1.1) + "rem";
+            input.dataset.r = r;
+            input.dataset.c = c;
+            input.addEventListener("input", handleInput);
+            input.addEventListener("keydown", handleKeydown);
+            boardEl.appendChild(input);
+          } else {
+            const spacer = document.createElement("div");
+            spacer.className = "empty";
+            spacer.style.width = size + "px";
+            spacer.style.height = size + "px";
+            boardEl.appendChild(spacer);
+          }
+        }
+      }
+    }
+
+    // ════════════════════════════════════════════════════
+    // SHARED INPUT HANDLING
+    // ════════════════════════════════════════════════════
+
+    function handleInput(e) {
+      const input = e.target;
+      input.value = input.value.replace(/[^a-zA-Z]/g, "").toUpperCase();
+      if (input.value) advanceFocus(input, 1);
+    }
+
+    function handleKeydown(e) {
+      const input = e.target;
+      const r = parseInt(input.dataset.r);
+      const c = parseInt(input.dataset.c);
+
+      if (e.key === "Backspace" && !input.value) {
+        e.preventDefault();
+        advanceFocus(input, -1);
+      } else if (e.key === "ArrowRight") {
+        advanceFocus(input, 1);
+      } else if (e.key === "ArrowLeft") {
+        advanceFocus(input, -1);
+      } else if (e.key === "ArrowDown") {
+        focusByOffset(input, 0, 1);
+      } else if (e.key === "ArrowUp") {
+        focusByOffset(input, 0, -1);
+      } else if (e.key === "Enter") {
+        e.preventDefault();
+        doSolve();
+      }
+    }
+
+    function advanceFocus(current, dir) {
+      const inputs = [...boardEl.querySelectorAll("input.cell")];
+      const idx = inputs.indexOf(current);
+      const next = inputs[idx + dir];
+      if (next) next.focus();
+    }
+
+    function focusByOffset(current, colOff, rowOff) {
+      const r = parseInt(current.dataset.r) + rowOff;
+      const c = parseInt(current.dataset.c) + colOff;
+      const target = boardEl.querySelector(`input.cell[data-r="${r}"][data-c="${c}"]`);
+      if (target) target.focus();
+    }
+
+    function fillRandom() {
+      boardEl.querySelectorAll("input.cell").forEach((inp) => {
+        inp.value = FREQ[Math.floor(Math.random() * FREQ.length)].toUpperCase();
+      });
+    }
+
+    function clearBoard() {
+      boardEl.querySelectorAll("input.cell").forEach((inp) => (inp.value = ""));
+      statsEl.innerHTML = "";
+      resultsEl.innerHTML = '<div class="empty-msg">Enter letters and hit Solve</div>';
+      boardEl.querySelector("input.cell")?.focus();
+    }
+
+    // ════════════════════════════════════════════════════
+    // READ BOARD (both modes)
+    // ════════════════════════════════════════════════════
+
+    function readBoard() {
+      if (currentMode === "grid") {
+        return readMxNBoard();
+      } else {
+        return readBlocksBoard();
+      }
+    }
+
+    function readMxNBoard() {
+      const { rows, cols } = getMxNSize();
+      const inputs = boardEl.querySelectorAll("input.cell");
+      const board = [];
+      let allFilled = true;
+      for (let r = 0; r < rows; r++) {
+        const row = [];
+        for (let c = 0; c < cols; c++) {
+          const val = inputs[r * cols + c].value.trim();
+          if (!val) allFilled = false;
+          row.push(val || "");
+        }
+        board.push(row);
+      }
+      return { board, allFilled };
+    }
+
+    function readBlocksBoard() {
+      const bounds = getBounds();
+      if (!bounds) return { board: null, allFilled: false };
+
+      const totalRows = (bounds.maxR - bounds.minR + 1) * BLOCK;
+      const totalCols = (bounds.maxC - bounds.minC + 1) * BLOCK;
+      const board = [];
+      let allFilled = true;
+
+      for (let r = 0; r < totalRows; r++) {
+        const row = [];
+        for (let c = 0; c < totalCols; c++) {
+          const absR = r + bounds.minR * BLOCK;
+          const absC = c + bounds.minC * BLOCK;
+          if (isActiveCell(absR, absC)) {
+            const input = boardEl.querySelector(
+              `input.cell[data-r="${r}"][data-c="${c}"]`
+            );
+            const val = input ? input.value.trim() : "";
+            if (!val) allFilled = false;
+            row.push(val || "");
+          } else {
+            row.push(null);
+          }
+        }
+        board.push(row);
+      }
+      return { board, allFilled };
+    }
+
+    // ════════════════════════════════════════════════════
+    // SOLVE + RESULTS
+    // ════════════════════════════════════════════════════
+
+    async function doSolve() {
+      if (currentMode === "blocks" && activeBlockCount() === 0) {
+        resultsEl.innerHTML = '<div class="empty-msg">Place at least one block first</div>';
+        return;
+      }
+
+      const { board, allFilled } = readBoard();
+      if (!allFilled) {
+        resultsEl.innerHTML = '<div class="empty-msg">Fill in all cells first</div>';
+        return;
+      }
+
+      solveBtn.disabled = true;
+      solveBtn.textContent = "Solving...";
+
+      try {
+        const res = await fetch("/solve", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            board,
+            minLength: parseInt(minLenSel.value),
+            noPlurals: noPluralsEl.checked,
+          }),
+        });
+        const data = await res.json();
+        renderResults(data);
+      } catch (err) {
+        resultsEl.innerHTML = `<div class="empty-msg">Error: ${err.message}</div>`;
+      } finally {
+        solveBtn.disabled = false;
+        solveBtn.textContent = "Solve";
+      }
+    }
+
+    function scoreLabel(len) {
+      if (len <= 2) return 0;
+      if (len <= 4) return 1;
+      if (len === 5) return 2;
+      if (len === 6) return 3;
+      if (len === 7) return 5;
+      return 11;
+    }
+
+    function renderResults(data) {
+      statsEl.innerHTML = `
+        <span class="count">${data.wordCount}</span> words found &mdash;
+        Total score: <span class="score">${data.totalScore}</span>
+        <br><span class="time">Solved in ${data.solveTimeMs}ms</span>
+      `;
+
+      const lengths = Object.keys(data.groups)
+        .map(Number)
+        .sort((a, b) => b - a);
+
+      if (lengths.length === 0) {
+        resultsEl.innerHTML = '<div class="empty-msg">No words found</div>';
+        return;
+      }
+
+      resultsEl.innerHTML = lengths
+        .map((len) => {
+          const words = data.groups[len].sort();
+          const pts = scoreLabel(len);
+          return `
+            <div class="group">
+              <div class="group-header">
+                ${len}-letter &mdash; ${words.length} word${words.length !== 1 ? "s" : ""}
+                <span class="pts">(${pts}pt${pts !== 1 ? "s" : ""} each)</span>
+              </div>
+              <div class="words">
+                ${words.map((w) => `<span>${w}</span>`).join("")}
+              </div>
+            </div>
+          `;
+        })
+        .join("");
+    }
+
+    // ════════════════════════════════════════════════════
+    // INIT
+    // ════════════════════════════════════════════════════
+
+    // Default block layout: single centre block
+    layout[1][1] = true;
+    buildLayoutDesigner();
+    buildMxNGrid();
+  </script>
+</body>
+</html>
