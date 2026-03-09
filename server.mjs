@@ -2,6 +2,9 @@ import { readFileSync } from "fs";
 import express from "express";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
+import multer from "multer";
+import sharp from "sharp";
+import Tesseract from "tesseract.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -132,13 +135,75 @@ function boggleScore(word) {
 function filterPlurals(words, trie) {
   return words.filter((w) => {
     if (w.length <= 3) return true;
-    // If word ends in 's' and the root (without 's') is a real dictionary word,
-    // treat it as a plural and filter it out
     if (w.endsWith("s") && trie.has(w.slice(0, -1))) return false;
-    // Also handle -es plurals (e.g. "watches" → "watch")
     if (w.endsWith("es") && trie.has(w.slice(0, -2))) return false;
     return true;
   });
+}
+
+// ── OCR ─────────────────────────────────────────────────────────────────────
+
+let ocrWorker = null;
+
+async function initOCR() {
+  console.log("Initialising Tesseract OCR worker...");
+  const t = performance.now();
+  ocrWorker = await Tesseract.createWorker("eng");
+  await ocrWorker.setParameters({
+    tessedit_pageseg_mode: Tesseract.PSM.SINGLE_CHAR,
+    tessedit_char_whitelist: "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+  });
+  console.log(`Tesseract ready in ${(performance.now() - t).toFixed(0)}ms`);
+}
+
+async function ocrCell(cellBuffer) {
+  const processed = await sharp(cellBuffer)
+    .resize(200, 200, { fit: "contain", background: "#ffffff" })
+    .grayscale()
+    .threshold(128)
+    .extend({ top: 20, bottom: 20, left: 20, right: 20, background: "#ffffff" })
+    .png()
+    .toBuffer();
+
+  const { data } = await ocrWorker.recognize(processed);
+  const ch = data.text.trim().charAt(0) || "?";
+  const confidence = data.confidence / 100;
+  return { letter: ch.toUpperCase(), confidence };
+}
+
+async function ocrBoard(imageBuffer, rows, cols) {
+  const meta = await sharp(imageBuffer).metadata();
+  const cellW = Math.floor(meta.width / cols);
+  const cellH = Math.floor(meta.height / rows);
+
+  // Slight inset to avoid grid lines/borders
+  const inset = Math.max(2, Math.floor(Math.min(cellW, cellH) * 0.08));
+
+  const grid = [];
+  const confidence = [];
+
+  for (let r = 0; r < rows; r++) {
+    const rowLetters = [];
+    const rowConf = [];
+    for (let c = 0; c < cols; c++) {
+      const cellBuffer = await sharp(imageBuffer)
+        .extract({
+          left: c * cellW + inset,
+          top: r * cellH + inset,
+          width: cellW - inset * 2,
+          height: cellH - inset * 2,
+        })
+        .toBuffer();
+
+      const result = await ocrCell(cellBuffer);
+      rowLetters.push(result.letter);
+      rowConf.push(result.confidence);
+    }
+    grid.push(rowLetters);
+    confidence.push(rowConf);
+  }
+
+  return { grid, confidence };
 }
 
 // ── Server ──────────────────────────────────────────────────────────────────
@@ -148,9 +213,13 @@ const t0 = performance.now();
 const { trie, count } = loadDictionary(3);
 console.log(`Loaded ${count.toLocaleString()} words in ${(performance.now() - t0).toFixed(0)}ms`);
 
+await initOCR();
+
 const app = express();
 app.use(express.json());
 app.use(express.static(join(__dirname, "public")));
+
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });
 
 app.post("/solve", (req, res) => {
   const { board, minLength = 3, noPlurals = false } = req.body;
@@ -159,7 +228,6 @@ app.post("/solve", (req, res) => {
     return res.status(400).json({ error: "Invalid board" });
   }
 
-  // Normalise: lowercase letters, preserve nulls
   const normalised = board.map((row) =>
     row.map((c) => (c === null ? null : c.toLowerCase()))
   );
@@ -173,10 +241,8 @@ app.post("/solve", (req, res) => {
 
   const elapsed = (performance.now() - t1).toFixed(1);
 
-  // Sort by length desc, then alphabetically
   words.sort((a, b) => b.length - a.length || a.localeCompare(b));
 
-  // Group by length
   const groups = {};
   let totalScore = 0;
   for (const w of words) {
@@ -192,6 +258,32 @@ app.post("/solve", (req, res) => {
     solveTimeMs: parseFloat(elapsed),
     groups,
   });
+});
+
+app.post("/ocr", upload.single("image"), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: "No image uploaded" });
+    }
+
+    const rows = parseInt(req.body.rows) || 4;
+    const cols = parseInt(req.body.cols) || 4;
+
+    if (rows < 1 || rows > 12 || cols < 1 || cols > 12) {
+      return res.status(400).json({ error: "Grid size must be 1-12" });
+    }
+
+    const t1 = performance.now();
+    const result = await ocrBoard(req.file.buffer, rows, cols);
+    const elapsed = (performance.now() - t1).toFixed(0);
+
+    console.log(`OCR ${rows}x${cols} board in ${elapsed}ms`);
+
+    res.json({ ...result, ocrTimeMs: parseInt(elapsed) });
+  } catch (err) {
+    console.error("OCR error:", err);
+    res.status(500).json({ error: "OCR failed: " + err.message });
+  }
 });
 
 const PORT = 3000;

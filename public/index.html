@@ -259,6 +259,24 @@
       font-style: italic;
     }
 
+    .board .cell.low-conf {
+      border-color: #f0a030;
+      background: #3a2a10;
+    }
+
+    /* ── Upload ──────────────────────────────────────────── */
+
+    .upload-input { display: none; }
+
+    .ocr-status {
+      text-align: center;
+      margin-bottom: 1rem;
+      font-size: 0.9rem;
+      color: #aaa;
+    }
+
+    .ocr-status.error { color: #e94560; }
+
     @media (max-width: 600px) {
       .board .cell, .board .empty {
         width: 36px !important;
@@ -336,9 +354,12 @@
     </label>
     <button onclick="fillRandom()">Random</button>
     <button onclick="clearBoard()">Clear</button>
+    <button onclick="triggerUpload()">Scan Photo</button>
     <button class="primary" id="solveBtn" onclick="doSolve()">Solve</button>
+    <input type="file" id="imageUpload" class="upload-input" accept="image/*" capture="environment" onchange="handleUpload(event)">
   </div>
 
+  <div class="ocr-status" id="ocrStatus"></div>
   <div class="board" id="board"></div>
 
   <div class="stats" id="stats"></div>
@@ -643,6 +664,106 @@
         board.push(row);
       }
       return { board, allFilled };
+    }
+
+    // ════════════════════════════════════════════════════
+    // IMAGE UPLOAD + OCR
+    // ════════════════════════════════════════════════════
+
+    const imageUpload = document.getElementById("imageUpload");
+    const ocrStatusEl = document.getElementById("ocrStatus");
+
+    function triggerUpload() {
+      imageUpload.value = "";
+      imageUpload.click();
+    }
+
+    async function handleUpload(e) {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      // Determine grid size based on current mode
+      let rows, cols;
+      if (currentMode === "grid") {
+        ({ rows, cols } = getMxNSize());
+      } else {
+        // For blocks mode, use the bounding box of active blocks
+        const bounds = getBounds();
+        if (!bounds || activeBlockCount() === 0) {
+          ocrStatusEl.textContent = "Place blocks first, then scan";
+          ocrStatusEl.className = "ocr-status error";
+          return;
+        }
+        rows = (bounds.maxR - bounds.minR + 1) * BLOCK;
+        cols = (bounds.maxC - bounds.minC + 1) * BLOCK;
+      }
+
+      ocrStatusEl.textContent = `Scanning ${rows}x${cols} board...`;
+      ocrStatusEl.className = "ocr-status";
+
+      const form = new FormData();
+      form.append("image", file);
+      form.append("rows", rows);
+      form.append("cols", cols);
+
+      try {
+        const res = await fetch("/ocr", { method: "POST", body: form });
+        const data = await res.json();
+
+        if (data.error) {
+          ocrStatusEl.textContent = data.error;
+          ocrStatusEl.className = "ocr-status error";
+          return;
+        }
+
+        // Populate grid with detected letters
+        populateFromOCR(data.grid, data.confidence);
+
+        const lowCount = data.confidence.flat().filter((c) => c < 0.7).length;
+        const msg = `Scanned in ${data.ocrTimeMs}ms`;
+        ocrStatusEl.textContent = lowCount > 0
+          ? `${msg} — ${lowCount} cell${lowCount > 1 ? "s" : ""} need checking (orange)`
+          : msg;
+        ocrStatusEl.className = "ocr-status";
+      } catch (err) {
+        ocrStatusEl.textContent = "Upload failed: " + err.message;
+        ocrStatusEl.className = "ocr-status error";
+      }
+    }
+
+    function populateFromOCR(grid, confidence) {
+      if (currentMode === "grid") {
+        // MxN mode: grid maps 1:1
+        const inputs = boardEl.querySelectorAll("input.cell");
+        const { cols } = getMxNSize();
+        for (let r = 0; r < grid.length; r++) {
+          for (let c = 0; c < grid[r].length; c++) {
+            const input = inputs[r * cols + c];
+            if (input) {
+              input.value = grid[r][c] === "?" ? "" : grid[r][c];
+              input.classList.toggle("low-conf", confidence[r][c] < 0.7);
+            }
+          }
+        }
+      } else {
+        // Blocks mode: only populate active cells
+        const bounds = getBounds();
+        if (!bounds) return;
+        for (let r = 0; r < grid.length; r++) {
+          for (let c = 0; c < grid[r].length; c++) {
+            const absR = r + bounds.minR * BLOCK;
+            const absC = c + bounds.minC * BLOCK;
+            if (!isActiveCell(absR, absC)) continue;
+            const input = boardEl.querySelector(
+              `input.cell[data-r="${r}"][data-c="${c}"]`
+            );
+            if (input) {
+              input.value = grid[r][c] === "?" ? "" : grid[r][c];
+              input.classList.toggle("low-conf", confidence[r][c] < 0.7);
+            }
+          }
+        }
+      }
     }
 
     // ════════════════════════════════════════════════════
